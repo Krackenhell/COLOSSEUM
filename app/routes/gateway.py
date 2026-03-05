@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Request, HTTPException
 from app.types import ConnectAgent, Heartbeat, SubmitSignal
 from app import store
-from app.services.security import check_api_key, check_timestamp, check_nonce
+from app.services.security import check_api_key, check_timestamp, check_nonce, check_antispam
 from app.services.simulator import execute_signal
+from app.services.market_data import get_price
 from app.services.audit import log_event
 
 router = APIRouter(prefix="/gateway", tags=["gateway"])
@@ -38,17 +39,28 @@ def heartbeat(body: Heartbeat, request: Request):
 def submit_signal(body: SubmitSignal, request: Request):
     _gate(request, body.agentId, body.tournamentId, body.timestamp, body.nonce)
     t = store.tournaments[body.tournamentId]
-    if t.status != "running":
-        raise HTTPException(400, "Tournament not running")
+
+    # Timer-based: only accept signals when effective status is running
+    eff = t.effective_status()
+    if eff != "running":
+        raise HTTPException(400, f"Tournament not running (effective status: {eff})")
+
     if body.symbol not in t.allowedSymbols:
         raise HTTPException(400, f"Symbol {body.symbol} not allowed")
     if body.qty <= 0:
         raise HTTPException(400, "qty must be > 0")
     if body.side not in ("buy", "sell"):
         raise HTTPException(400, "side must be buy or sell")
+
     agent = store.agents[body.tournamentId][body.agentId]
+
+    # Anti-spam check
+    price = get_price(body.symbol)
+    notional = price * body.qty
+    check_antispam(body.tournamentId, body.agentId, notional, agent.starting_balance, t.riskProfile.value)
+
     try:
-        ev = execute_signal(agent, body.symbol, body.side, body.qty)
+        ev = execute_signal(agent, body.symbol, body.side, body.qty, t.leverage)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"status": "executed", "event": ev.model_dump()}
