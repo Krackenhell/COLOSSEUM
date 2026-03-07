@@ -1,19 +1,19 @@
-"""Futures-style simulator: market orders only, long/short positions."""
+
+"""Futures-style simulator with signal logging and equity snapshots."""
 from app.types import AgentState, FuturesPosition, Event
 from app.services.market_data import get_price
+from app.services.audit import log_signal, snapshot_equity
 from app import store
 
 
-def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, leverage: float = 10.0) -> Event:
-    price = get_price(symbol)
+def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, leverage: float = 10.0, price_override: float | None = None) -> Event:
+    price = price_override if price_override is not None else get_price(symbol)
     pos = agent.positions.get(symbol, FuturesPosition(symbol=symbol, leverage=leverage))
-
     notional = price * qty
     margin_required = notional / leverage
 
     if side == "buy":
         if pos.side == "short":
-            # Closing/reducing short
             close_qty = min(qty, pos.size)
             pnl = (pos.entry_price - price) * close_qty
             pos.realized_pnl += pnl
@@ -25,7 +25,6 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
                 pos.side = "flat"
                 pos.entry_price = 0.0
             if remaining > 0:
-                # Open long with remaining
                 req_margin = price * remaining / leverage
                 if agent.cash_balance < req_margin:
                     raise ValueError(f"Insufficient margin: need {req_margin:.2f}, have {agent.cash_balance:.2f}")
@@ -35,7 +34,6 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
                 pos.entry_price = price
                 pos.leverage = leverage
         elif pos.side == "long":
-            # Adding to long
             req_margin = margin_required
             if agent.cash_balance < req_margin:
                 raise ValueError(f"Insufficient margin: need {req_margin:.2f}, have {agent.cash_balance:.2f}")
@@ -44,7 +42,6 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
             pos.size = new_size
             agent.cash_balance -= req_margin
         else:
-            # Flat -> open long
             if agent.cash_balance < margin_required:
                 raise ValueError(f"Insufficient margin: need {margin_required:.2f}, have {agent.cash_balance:.2f}")
             agent.cash_balance -= margin_required
@@ -52,10 +49,8 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
             pos.size = qty
             pos.entry_price = price
             pos.leverage = leverage
-
     elif side == "sell":
         if pos.side == "long":
-            # Closing/reducing long
             close_qty = min(qty, pos.size)
             pnl = (price - pos.entry_price) * close_qty
             pos.realized_pnl += pnl
@@ -76,7 +71,6 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
                 pos.entry_price = price
                 pos.leverage = leverage
         elif pos.side == "short":
-            # Adding to short
             if agent.cash_balance < margin_required:
                 raise ValueError(f"Insufficient margin: need {margin_required:.2f}, have {agent.cash_balance:.2f}")
             new_size = pos.size + qty
@@ -84,7 +78,6 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
             pos.size = new_size
             agent.cash_balance -= margin_required
         else:
-            # Flat -> open short
             if agent.cash_balance < margin_required:
                 raise ValueError(f"Insufficient margin: need {margin_required:.2f}, have {agent.cash_balance:.2f}")
             agent.cash_balance -= margin_required
@@ -97,22 +90,23 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
     agent.trades_count += 1
     update_equity(agent)
 
+    # Log signal and snapshot
+    log_signal(agent.tournamentId, agent.agentId, symbol, side, qty,
+               price=price, status="executed", equity_after=agent.equity)
+    snapshot_equity(agent.tournamentId, agent.agentId,
+                    agent.equity, agent.cash_balance, agent.realized_pnl)
+
     ev = Event(
-        tournamentId=agent.tournamentId,
-        agentId=agent.agentId,
-        type="trade",
-        detail={
-            "symbol": symbol, "side": side, "qty": qty,
-            "price": price, "notional": round(notional, 2),
-            "pos_side": pos.side, "pos_size": round(pos.size, 6),
-        },
+        tournamentId=agent.tournamentId, agentId=agent.agentId, type="trade",
+        detail={"symbol": symbol, "side": side, "qty": qty, "price": price,
+                "notional": round(notional, 2), "pos_side": pos.side,
+                "pos_size": round(pos.size, 6)},
     )
     store.events.setdefault(agent.tournamentId, []).append(ev)
     return ev
 
 
 def update_equity(agent: AgentState, prices: dict[str, float] | None = None):
-    """Recalculate unrealized PnL and equity from current prices."""
     u = 0.0
     for sym, pos in agent.positions.items():
         if pos.size == 0 or pos.side == "flat":

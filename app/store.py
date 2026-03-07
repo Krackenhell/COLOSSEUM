@@ -1,12 +1,21 @@
-from app.types import Tournament, AgentState, Event
+
+from app.types import Tournament, AgentState, Event, AgentKeyInfo, SignalRecord
 from collections import deque
 import time
 
-tournaments: dict[str, Tournament] = {}
-agents: dict[str, dict[str, AgentState]] = {}   # tournamentId -> agentId -> state
-events: dict[str, list[Event]] = {}              # tournamentId -> events
-nonces: dict[str, set[str]] = {}                 # agentId -> used nonces
-rate_limits: dict[str, list[float]] = {}         # api_key -> list of timestamps
+tournaments: dict[str, Tournament] = {}           # active tournaments only
+archived_tournaments: dict[str, Tournament] = {}   # archived (historical) tournaments
+agents: dict[str, dict[str, AgentState]] = {}
+events: dict[str, list[Event]] = {}
+nonces: dict[str, set[str]] = {}
+rate_limits: dict[str, list[float]] = {}
+agent_order_timestamps: dict[str, deque] = {}
+agent_api_keys: dict[str, AgentKeyInfo] = {}
 
-# Anti-spam: per-agent order timestamps within sliding window
-agent_order_timestamps: dict[str, deque] = {}    # "tid:agentId" -> deque of timestamps
+# Agent Studio data
+signal_history: dict[str, list[SignalRecord]] = {}   # "tid:agentId" -> signals
+equity_snapshots: dict[str, list[dict]] = {}          # "tid:agentId" -> [{ts,equity,cash,pnl}]
+
+# Track which user (agentId from API key) registered in which active tournament
+# agentId -> tournamentId  (only one agent per user across active tournaments)
+user_agent_tournament: dict[str, str] = {}

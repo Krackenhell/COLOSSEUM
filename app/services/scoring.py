@@ -6,7 +6,9 @@ from app.services.simulator import update_equity
 
 def get_leaderboard(tournament_id: str) -> list[dict]:
     agents = store.agents.get(tournament_id, {})
-    t = store.tournaments[tournament_id]
+    t = store.tournaments.get(tournament_id) or store.archived_tournaments.get(tournament_id)
+    if not t:
+        return []
 
     # Single price snapshot for all symbols used
     all_symbols = set()

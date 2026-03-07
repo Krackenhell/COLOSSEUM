@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
@@ -9,6 +10,7 @@ class TournamentStatus(str, Enum):
     scheduled = "scheduled"
     running = "running"
     finished = "finished"
+    archived = "archived"
 
 
 class RiskProfile(str, Enum):
@@ -18,10 +20,10 @@ class RiskProfile(str, Enum):
 
 class CreateTournament(BaseModel):
     name: str
-    allowedSymbols: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    allowedSymbols: list[str] = ["BTCUSDT", "ETHUSDT", "AVAXUSDT"]
     startingBalance: float = 100000.0
-    startAt: Optional[float] = None   # unix ts; default = now+60s
-    endAt: Optional[float] = None     # unix ts; default = startAt+24h
+    startAt: Optional[float] = None
+    endAt: Optional[float] = None
     riskProfile: RiskProfile = RiskProfile.normal
     leverage: float = 10.0
 
@@ -30,7 +32,7 @@ class Tournament(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
     name: str
     status: TournamentStatus = TournamentStatus.scheduled
-    allowedSymbols: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    allowedSymbols: list[str] = ["BTCUSDT", "ETHUSDT", "AVAXUSDT"]
     startingBalance: float = 100000.0
     createdAt: float = Field(default_factory=time.time)
     startAt: float = 0.0
@@ -54,10 +56,9 @@ class RegisterAgent(BaseModel):
     name: str = ""
 
 
-# --- Futures position per symbol ---
 class FuturesPosition(BaseModel):
     symbol: str = ""
-    side: str = "flat"       # long / short / flat
+    side: str = "flat"
     size: float = 0.0
     entry_price: float = 0.0
     leverage: float = 10.0
@@ -71,7 +72,7 @@ class AgentState(BaseModel):
     tournamentId: str = ""
     cash_balance: float = 100000.0
     starting_balance: float = 100000.0
-    positions: dict[str, FuturesPosition] = {}  # symbol -> FuturesPosition
+    positions: dict[str, FuturesPosition] = {}
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
     equity: float = 100000.0
@@ -101,10 +102,11 @@ class SubmitSignal(BaseModel):
     agentId: str
     tournamentId: str
     symbol: str
-    side: str  # buy | sell
+    side: str
     qty: float
     timestamp: float
     nonce: str
+    quoteId: Optional[str] = None
 
 
 class Event(BaseModel):
@@ -114,3 +116,37 @@ class Event(BaseModel):
     type: str
     detail: dict = {}
     ts: float = Field(default_factory=time.time)
+
+
+class SignalRecord(BaseModel):
+    ts: float = Field(default_factory=time.time)
+    symbol: str
+    side: str
+    qty: float
+    price: float = 0.0
+    status: str = "executed"
+    error: str = ""
+    equity_after: float = 0.0
+
+
+class AgentKeyInfo(BaseModel):
+    api_key: str
+    agentId: str
+    name: str = ""
+    tournamentId: str = ""
+    created_at: float = Field(default_factory=time.time)
+    expires_at: float = 0.0
+    is_active: bool = True
+    last_used: float = 0.0
+
+
+class SignalRequest(BaseModel):
+    tournamentId: str
+    symbol: str
+    side: str
+    qty: float
+    quoteId: Optional[str] = None
+
+
+class JoinRequest(BaseModel):
+    name: str = ""
