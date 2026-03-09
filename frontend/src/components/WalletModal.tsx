@@ -1,3 +1,6 @@
+// src/components/WalletModal.tsx
+// Wallet connect modal — MetaMask only (EVM / Avalanche Fuji).
+
 import {
   Dialog, DialogContent, DialogHeader,
   DialogTitle, DialogDescription,
@@ -48,4 +51,60 @@ export function WalletModal({ open, onOpenChange, onConnected }: WalletModalProp
             Connect Wallet
           </DialogTitle>
           <DialogDescription>
-            Connect
+            Connect your MetaMask wallet to access Colosseum Arena.
+            You will be switched to <strong>Avalanche Fuji Testnet</strong> automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 pt-4">
+          {/* Error banner */}
+          {error && (
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* MetaMask button */}
+          {hasMetaMask ? (
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-14"
+              onClick={handleConnect}
+              disabled={isConnecting}
+            >
+              <MetaMaskIcon />
+              <div className="text-left flex-1">
+                <div className="font-medium">MetaMask</div>
+                <div className="text-xs text-muted-foreground">
+                  Avalanche Fuji Testnet (EVM)
+                </div>
+              </div>
+              {isConnecting && <Loader2 className="h-4 w-4 animate-spin ml-auto" />}
+            </Button>
+          ) : (
+            /* MetaMask not installed */
+            <div className="rounded-md border border-dashed p-4 text-center space-y-2">
+              <p className="text-sm text-muted-foreground">
+                MetaMask is not installed in your browser.
+              </p>
+              <Button
+                variant="link"
+                size="sm"
+                className="gap-1"
+                onClick={() => window.open("https://metamask.io/download/", "_blank")}
+              >
+                Install MetaMask
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground text-center pt-1">
+            By connecting, you agree to the platform&apos;s terms of use.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
