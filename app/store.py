@@ -19,3 +19,6 @@ equity_snapshots: dict[str, list[dict]] = {}          # "tid:agentId" -> [{ts,eq
 # Track which user (agentId from API key) registered in which active tournament
 # agentId -> tournamentId  (only one agent per user across active tournaments)
 user_agent_tournament: dict[str, str] = {}
+
+# MVP: wallet -> agent info mapping (one agent per wallet)
+wallet_agents: dict[str, dict] = {}

@@ -22,7 +22,17 @@ def _archive_active_tournaments():
 
 @router.post("")
 def create_tournament(body: CreateTournament):
-    # Auto-archive all previous active tournaments
+    # MVP STRICT: only ONE active tournament at a time (running or scheduled)
+    active = [t for t in store.tournaments.values() if t.effective_status() in ("running", "scheduled", "pending")]
+    if active:
+        names = ", ".join(f"'{t.name}' ({t.effective_status()})" for t in active)
+        raise HTTPException(
+            409,
+            f"Cannot create tournament: already have active tournament(s): {names}. "
+            "Finish or archive existing tournament first."
+        )
+
+    # Auto-archive all previous non-active tournaments (cleanup)
     _archive_active_tournaments()
 
     now = time.time()
@@ -102,7 +112,18 @@ def set_status(tid: str, body: SetStatus):
     t = store.tournaments.get(tid)
     if not t:
         raise HTTPException(404, "Tournament not found")
+    # MVP STRICT: prevent starting if another tournament is already running
+    if body.status == TournamentStatus.running:
+        running = [ot for ot_id, ot in store.tournaments.items()
+                   if ot_id != tid and ot.effective_status() == "running"]
+        if running:
+            names = ", ".join(f"'{ot.name}'" for ot in running)
+            raise HTTPException(409, f"Cannot start: tournament(s) already running: {names}. Stop them first.")
+
     t.status = body.status
+    # Force start: move startAt to now so timer/countdown works correctly
+    if body.status == TournamentStatus.running and time.time() < t.startAt:
+        t.startAt = time.time()
     log_event(tid, "system", "status_change", {"status": body.status})
     # If finished, auto-archive
     if body.status in (TournamentStatus.finished, TournamentStatus.archived):

@@ -3,9 +3,19 @@ import os
 import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from app.routes import tournaments, gateway, ui, agent_api, test_agent_routes
 
 app = FastAPI(title="Colosseum MVP", version="0.3.0")
+
+# CORS: allow frontend dev server and any localhost origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(Exception)
@@ -29,8 +39,14 @@ def health():
 
 @app.get("/market-status")
 def market_status():
-    from app.services.market_data import get_market_status
-    return get_market_status()
+    from app.services.market_data import get_market_status, MARKET_SOURCE
+    try:
+        return get_market_status()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"market-status error: {e}")
+        return {"marketSource": MARKET_SOURCE, "status": "degraded",
+                "error": str(e)[:200], "symbols": {}}
 
 
 if __name__ == "__main__":

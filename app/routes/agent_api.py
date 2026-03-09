@@ -24,6 +24,69 @@ def agent_register(body: dict, request: Request):
     return {"api_key": api_key, "agentId": agent_id, "name": name}
 
 
+@router.post("/register-wallet")
+def register_wallet_agent(body: dict, request: Request):
+    """MVP: Register agent keyed by wallet address. One agent per wallet."""
+    wallet = body.get("wallet", "").strip().lower()
+    if not wallet:
+        raise HTTPException(400, "wallet address required")
+    name = body.get("name", "")
+    if not name:
+        raise HTTPException(400, "agent name required")
+
+    # One-agent-per-wallet: check if wallet already has an agent
+    existing = store.wallet_agents.get(wallet)
+    if existing:
+        raise HTTPException(409, f"Wallet {wallet[:10]}... already has agent '{existing['name']}' (id: {existing['agentId']})")
+
+    agent_id = "agent-" + uuid.uuid4().hex[:8]
+    api_key = generate_key(agent_id, name, expires_in_hours=0)  # no expiry for MVP
+
+    store.wallet_agents[wallet] = {
+        "agentId": agent_id,
+        "name": name,
+        "wallet": wallet,
+        "api_key": api_key,
+        "created_at": time.time(),
+    }
+    return {"api_key": api_key, "agentId": agent_id, "name": name, "wallet": wallet}
+
+
+@router.get("/wallet-agent/{wallet}")
+def get_wallet_agent(wallet: str):
+    """Check if wallet already has a registered agent."""
+    wallet = wallet.strip().lower()
+    info = store.wallet_agents.get(wallet)
+    if not info:
+        return {"exists": False}
+    return {"exists": True, "agentId": info["agentId"], "name": info["name"]}
+
+
+@router.post("/create-key")
+def create_new_key(body: dict, request: Request):
+    """Create a new API key for an existing agent (by wallet)."""
+    wallet = body.get("wallet", "").strip().lower()
+    agent_info = store.wallet_agents.get(wallet)
+    if not agent_info:
+        raise HTTPException(404, "No agent found for this wallet")
+    agent_id = agent_info["agentId"]
+    name = agent_info["name"]
+    new_key = generate_key(agent_id, name, expires_in_hours=0)
+    return {"api_key": new_key, "agentId": agent_id}
+
+
+@router.post("/keys-by-wallet")
+def keys_by_wallet(body: dict, request: Request):
+    """List keys for a specific wallet's agent."""
+    wallet = body.get("wallet", "").strip().lower()
+    agent_info = store.wallet_agents.get(wallet)
+    if not agent_info:
+        return []
+    agent_id = agent_info["agentId"]
+    all_keys = list_keys()
+    return [k for k in all_keys if k["agentId"] == agent_id]
+
+
 @router.get("/tournaments")
 def list_tournaments(request: Request):
     info = resolve_key(request)

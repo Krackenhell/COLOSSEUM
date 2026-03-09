@@ -44,6 +44,11 @@ class Tournament(BaseModel):
         now = time.time()
         if self.status == TournamentStatus.finished:
             return "finished"
+        if self.status == TournamentStatus.running:
+            # Explicitly forced to running — honor it, but check endAt
+            if now >= self.endAt:
+                return "finished"
+            return "running"
         if now < self.startAt:
             return "scheduled"
         if now >= self.endAt:
