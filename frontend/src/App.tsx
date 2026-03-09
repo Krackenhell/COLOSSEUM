@@ -8,6 +8,7 @@ import Landing from "./pages/Landing";
 import UserPanel from "./pages/UserPanel";
 import AgentPanel from "./pages/AgentPanel";
 import Leaderboard from "./pages/Leaderboard";
+import History from "./pages/History";
 import AdminPanel from "./pages/AdminPanel";
 import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/app/user" element={<UserPanel />} />
             <Route path="/app/agent" element={<AgentPanel />} />
             <Route path="/app/leaderboard" element={<Leaderboard />} />
+            <Route path="/app/history" element={<History />} />
             <Route path="/app/admin" element={<AdminPanel />} />
             <Route path="/app/onboarding" element={<Onboarding />} />
             <Route path="*" element={<NotFound />} />

@@ -20,6 +20,7 @@ export default function Onboarding() {
 
   const [step, setStep] = useState<Step>("payment");
   const [agentName, setAgentName] = useState("");
+  const [agentIcon, setAgentIcon] = useState("https://api.dicebear.com/7.x/bottts/svg?seed=Lucky");
   const [agentId, setAgentId] = useState("");
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [allKeys, setAllKeys] = useState<any[]>([]);
@@ -68,16 +69,67 @@ export default function Onboarding() {
     } catch {}
   };
 
-  /* ── Step A: Payment ── */
+  /* ── Step A: Payment via smart contract ── */
   const handlePayment = async () => {
     setPaymentProcessing(true);
-    // TODO: Replace with real smart contract call
-    // Placeholder: simulate payment delay
-    await new Promise(r => setTimeout(r, 1500));
-    // simulateSmartContractPayment(address, 0) — MVP discount $0
-    setPaymentProcessing(false);
-    toast({ title: "Payment Successful", description: "Participation card purchased (MVP: $0 discount applied)." });
-    setStep("settings");
+    const contractAddr = import.meta.env.VITE_PAYMENT_CONTRACT;
+    const eth = (window as any).ethereum;
+
+    // MVP fallback: if contract/wallet is not available, allow zero-cost registration flow
+    if (!contractAddr || !eth) {
+      toast({
+        title: "MVP Mode",
+        description: "Contract payment skipped (0$). You can continue to agent setup.",
+      });
+      setStep("settings");
+      setPaymentProcessing(false);
+      return;
+    }
+
+    try {
+      // Call register() on PaymentRegistry — fee is 0 for MVP
+      // register() selector = keccak256("register()") first 4 bytes = 0x1aa3a008
+      const REGISTER_SELECTOR = "0x1aa3a008";
+
+      const txHash = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{
+          from: address,
+          to: contractAddr,
+          data: REGISTER_SELECTOR,
+          value: "0x0", // 0 fee for MVP
+        }],
+      });
+
+      toast({ title: "Payment Submitted!", description: `TX: ${(txHash as string).slice(0, 18)}... Waiting for confirmation.` });
+
+      // Wait for confirmation (simple poll)
+      let confirmed = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const receipt = await eth.request({ method: "eth_getTransactionReceipt", params: [txHash] });
+        if (receipt) {
+          confirmed = true;
+          break;
+        }
+      }
+
+      if (confirmed) {
+        toast({ title: "Payment Confirmed!", description: "On-chain registration successful." });
+        setStep("settings");
+      } else {
+        toast({ title: "Pending", description: "TX submitted but not confirmed yet. You can proceed.", variant: "destructive" });
+        setStep("settings");
+      }
+    } catch (err: any) {
+      if (err.code === 4001) {
+        toast({ title: "Rejected", description: "Transaction rejected by user.", variant: "destructive" });
+      } else {
+        toast({ title: "Payment Error", description: err.message || "Smart contract call failed.", variant: "destructive" });
+      }
+    } finally {
+      setPaymentProcessing(false);
+    }
   };
 
   /* ── Step B: Agent Settings ── */
@@ -91,12 +143,29 @@ export default function Onboarding() {
       const res = await fetch(`${BASE}/agent-api/v1/register-wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": "dev-gateway-key" },
-        body: JSON.stringify({ wallet: address, name: agentName.trim() }),
+        body: JSON.stringify({ wallet: address, name: agentName.trim(), iconUrl: agentIcon.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || data.error || "Registration failed");
       setAgentId(data.agentId);
       setApiKey(data.api_key);
+
+      // Auto-join active tournament if one exists
+      try {
+        const tournaments = await api.listTournaments();
+        const active = tournaments.find(t => t.effectiveStatus === "scheduled" || t.effectiveStatus === "pending" || t.effectiveStatus === "running");
+        if (active) {
+          await fetch(`${BASE}/agent-api/v1/tournaments/${active.id}/join`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": data.api_key },
+            body: JSON.stringify({ name: agentName.trim(), iconUrl: agentIcon.trim() }),
+          });
+          toast({ title: "Tournament Joined", description: `Agent registered and joined '${active.name}'` });
+        }
+      } catch (err) {
+        console.error("Auto-join failed", err);
+      }
+
       setShowKeyWarning(true);
       setStep("apikey");
     } catch (e: any) {
@@ -250,10 +319,12 @@ export default function Onboarding() {
                 </div>
               </div>
 
-              {/* TODO: Smart contract call placeholder */}
-              <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-200">
+              <div className="p-3 bg-cyan/10 border border-cyan/20 rounded-lg text-xs text-cyan-200">
                 <AlertTriangle className="h-3 w-3 inline mr-1" />
-                MVP: Payment is simulated. Smart contract integration pending.
+                Payment via PaymentRegistry smart contract on Avalanche Fuji testnet.
+                {!import.meta.env.VITE_PAYMENT_CONTRACT && (
+                  <span className="block mt-1 text-yellow-300">ℹ MVP mode: if contract is not set, payment is skipped (0$) and onboarding continues.</span>
+                )}
               </div>
 
               <Button variant="neon" className="w-full gap-2" onClick={handlePayment} disabled={paymentProcessing}>
@@ -277,6 +348,19 @@ export default function Onboarding() {
                   onChange={(e) => setAgentName(e.target.value)}
                   maxLength={32}
                 />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">Bot Icon (URL)</label>
+                <div className="flex gap-3 items-center">
+                  <img src={agentIcon} className="w-10 h-10 rounded-full border border-border bg-secondary p-1" alt="Preview" />
+                  <input
+                    className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm"
+                    placeholder="https://..."
+                    value={agentIcon}
+                    onChange={(e) => setAgentIcon(e.target.value)}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Use any image URL or a DiceBear avatar seed.</p>
               </div>
               <div className="p-3 bg-secondary/30 rounded-lg text-xs text-muted-foreground">
                 <p>Agent ID will be auto-generated.</p>

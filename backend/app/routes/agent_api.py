@@ -33,6 +33,7 @@ def register_wallet_agent(body: dict, request: Request):
     name = body.get("name", "")
     if not name:
         raise HTTPException(400, "agent name required")
+    icon_url = body.get("iconUrl")
 
     # One-agent-per-wallet: check if wallet already has an agent
     existing = store.wallet_agents.get(wallet)
@@ -47,9 +48,10 @@ def register_wallet_agent(body: dict, request: Request):
         "name": name,
         "wallet": wallet,
         "api_key": api_key,
+        "iconUrl": icon_url,
         "created_at": time.time(),
     }
-    return {"api_key": api_key, "agentId": agent_id, "name": name, "wallet": wallet}
+    return {"api_key": api_key, "agentId": agent_id, "name": name, "wallet": wallet, "iconUrl": icon_url}
 
 
 @router.get("/wallet-agent/{wallet}")
@@ -108,6 +110,7 @@ def join_tournament(tid: str, request: Request, body: JoinRequest = None):
         raise HTTPException(404, "Tournament not found")
     agent_id = info.agentId
     name = (body.name if body and body.name else info.name) or agent_id
+    icon_url = (body.iconUrl if body and body.iconUrl else None)
 
     eff = t.effective_status()
 
@@ -120,7 +123,7 @@ def join_tournament(tid: str, request: Request, body: JoinRequest = None):
         if existing_tid and existing_tid != tid:
             raise HTTPException(409, f"Agent '{agent_id}' already registered in tournament '{existing_tid}'.")
         state = AgentState(
-            agentId=agent_id, name=name, tournamentId=tid,
+            agentId=agent_id, name=name, iconUrl=icon_url, tournamentId=tid,
             cash_balance=t.startingBalance, starting_balance=t.startingBalance,
             equity=t.startingBalance,
         )
@@ -138,7 +141,7 @@ def join_tournament(tid: str, request: Request, body: JoinRequest = None):
 @router.get("/tournaments/{tid}/state")
 def tournament_state(tid: str, request: Request):
     resolve_key(request)
-    t = store.tournaments.get(tid)
+    t = store.tournaments.get(tid) or store.archived_tournaments.get(tid)
     if not t:
         raise HTTPException(404, "Tournament not found")
     now = time.time()
@@ -214,6 +217,11 @@ def submit_signal(body: SignalRequest, request: Request):
             exec_source = f"live_{trading_source}"
 
     notional = price * body.qty
+    # Resolve leverage: agent-chosen (clamped to tournament max) or tournament default
+    effective_leverage = t.leverage
+    if body.leverage is not None:
+        effective_leverage = max(1.0, min(body.leverage, t.leverage))
+
     try:
         check_antispam(tid, agent_id, notional, agent.starting_balance, t.riskProfile.value)
     except HTTPException as e:
@@ -221,7 +229,7 @@ def submit_signal(body: SignalRequest, request: Request):
                    price=price, status="rejected", error=str(e.detail))
         raise
     try:
-        ev = execute_signal(agent, body.symbol, body.side, body.qty, t.leverage, price_override=price)
+        ev = execute_signal(agent, body.symbol, body.side, body.qty, effective_leverage, price_override=price)
     except ValueError as e:
         log_signal(tid, agent_id, body.symbol, body.side, body.qty,
                    price=price, status="rejected", error=str(e))
@@ -304,3 +312,19 @@ def rotate_key(request: Request):
     # Generate new key for same agent
     new_key = generate_key(agent_id, info.name, info.tournamentId)
     return {"api_key": new_key, "agentId": agent_id, "message": "Key rotated. Old key revoked."}
+
+
+@router.post("/tournaments/{tid}/update-agent")
+def update_agent(tid: str, body: dict, request: Request):
+    """Update agent name/icon in a tournament."""
+    info = resolve_key(request)
+    agent_id = info.agentId
+    agents_dict = store.agents.get(tid, {})
+    agent = agents_dict.get(agent_id)
+    if not agent:
+        raise HTTPException(404, "Agent not found in this tournament")
+    if "name" in body and body["name"]:
+        agent.name = body["name"]
+    if "iconUrl" in body:
+        agent.iconUrl = body["iconUrl"]
+    return agent.model_dump()

@@ -11,11 +11,11 @@ def log_event(tournament_id: str, agent_id: str, event_type: str, detail: dict =
 
 
 def log_signal(tid: str, agent_id: str, symbol: str, side: str, qty: float,
-               price: float = 0.0, status: str = "executed", error: str = "",
+               price: float = 0.0, leverage: float = 1.0, status: str = "executed", error: str = "",
                equity_after: float = 0.0):
     key = f"{tid}:{agent_id}"
     rec = SignalRecord(symbol=symbol, side=side, qty=qty, price=price,
-                       status=status, error=error, equity_after=equity_after)
+                       leverage=leverage, status=status, error=error, equity_after=equity_after)
     store.signal_history.setdefault(key, []).append(rec)
     if len(store.signal_history[key]) > 200:
         store.signal_history[key] = store.signal_history[key][-200:]

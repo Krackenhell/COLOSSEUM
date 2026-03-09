@@ -61,6 +61,24 @@ _quote_lock = threading.Lock()
 
 COINGECKO_IDS = {"BTCUSDT": "bitcoin", "ETHUSDT": "ethereum", "AVAXUSDT": "avalanche-2"}
 
+# --- WebSocket manager (lazy init) ---
+_ws_started = False
+
+def _ensure_ws_manager():
+    """Start WS manager if MARKET_SOURCE is ws_mvp and not yet started."""
+    global _ws_started
+    if _ws_started:
+        return
+    if MARKET_SOURCE == "ws_mvp":
+        _ws_started = True
+        try:
+            from app.services.ws_manager import start as ws_start
+            ws_start()
+            logger.info("WS manager auto-started for ws_mvp mode")
+        except Exception as e:
+            logger.error(f"Failed to start WS manager: {e}")
+            _ws_started = False
+
 
 def _fetch_live_exchange_prices() -> dict[str, float]:
     """Fetch live prices from CoinGecko (primary) or Binance (fallback). Returns {symbol: price}."""
@@ -266,6 +284,28 @@ def get_price(symbol: str) -> float:
             logger.debug(f"Chainlink fallback to mock for {symbol}")
             return _mock_price(symbol)
 
+        if MARKET_SOURCE == "ws_mvp":
+            _ensure_ws_manager()
+            try:
+                from app.services.ws_manager import get_ws_price
+                ws = get_ws_price(symbol)
+                if ws and not ws["stale"] and ws["price"] > 0:
+                    _mock_prices[symbol] = ws["price"]
+                    return round(ws["price"], 4)
+            except Exception:
+                pass
+            # Fallback to REST
+            try:
+                _fetch_live_exchange_prices()
+                with _exchange_lock:
+                    ex = _exchange_cache.get(symbol)
+                if ex and ex.get("price") and ex["price"] > 0:
+                    _mock_prices[symbol] = ex["price"]
+                    return round(ex["price"], 4)
+            except Exception:
+                pass
+            return _mock_price(symbol)
+
         return _mock_price(symbol)
     except Exception as e:
         # Ultimate safety: never crash
@@ -356,6 +396,39 @@ def get_effective_trading_price(symbol: str) -> tuple[float, str, str | None]:
         if lg and lg.get("price") and lg["price"] > 0:
             return round(lg["price"], 4), "last_good_fallback", stale_reason or "no live source available"
 
+    # === WS_MVP MODE ===
+    if MARKET_SOURCE == "ws_mvp":
+        _ensure_ws_manager()
+        try:
+            from app.services.ws_manager import get_ws_price
+            ws = get_ws_price(symbol)
+            if ws and not ws["stale"] and ws["price"] > 0:
+                # Fresh WS price available
+                _last_good[symbol] = {"price": ws["price"], "ts": ws["ts"], "source": f"ws_{ws['source']}"}
+                return round(ws["price"], 4), f"ws_{ws['source']}", None
+        except Exception as e:
+            logger.warning(f"ws_mvp price error for {symbol}: {e}")
+
+        # WS stale/unavailable -> fallback to REST exchange
+        try:
+            _fetch_live_exchange_prices()
+            with _exchange_lock:
+                ex = _exchange_cache.get(symbol)
+            if ex and not ex.get("stale") and ex.get("price") and ex["price"] > 0:
+                exchange_age = now - ex["ts"]
+                if exchange_age < 120:
+                    return round(ex["price"], 4), "rest_fallback", "ws stale/disconnected, using REST"
+        except Exception as e:
+            logger.warning(f"ws_mvp REST fallback error: {e}")
+
+        # Last good
+        lg = _last_good.get(symbol)
+        if lg and lg.get("price") and lg["price"] > 0:
+            return round(lg["price"], 4), "last_good_fallback", "ws and REST both unavailable"
+
+        # No price at all -> block
+        return 0.0, "ws_blocked", f"WS_MVP_BLOCKED: no price available for {symbol}"
+
     # Mock mode or ultimate fallback
     return get_price(symbol), "mock" if MARKET_SOURCE == "mock" else "last_good_fallback", None
 
@@ -422,7 +495,22 @@ def get_market_status() -> dict:
             symbols_status[symbol]["strictBlocked"] = block_reason is not None
             symbols_status[symbol]["strictBlockReason"] = block_reason
 
-    return {
+    # WS status
+    ws_status = {}
+    if MARKET_SOURCE == "ws_mvp":
+        _ensure_ws_manager()
+        try:
+            from app.services.ws_manager import get_ws_status
+            ws_status = get_ws_status()
+            # Merge per-symbol ws data into symbols_status
+            for sym, ws_sym in ws_status.get("wsPrices", {}).items():
+                if sym in symbols_status:
+                    symbols_status[sym].update(ws_sym)
+        except Exception as e:
+            logger.warning(f"WS status error: {e}")
+            ws_status = {"wsConnected": False, "wsError": str(e)[:200]}
+
+    result = {
         "marketSource": MARKET_SOURCE,
         "chainlinkStrictOnly": CHAINLINK_STRICT_ONLY,
         "chainlinkRpcConfigured": bool(CHAINLINK_RPC),
@@ -432,6 +520,8 @@ def get_market_status() -> dict:
         "tradingMaxOracleAgeSec": TRADING_MAX_ORACLE_AGE_SEC,
         "symbols": symbols_status,
     }
+    result.update(ws_status)
+    return result
 
 
 # ---- Quote snapshot store ----

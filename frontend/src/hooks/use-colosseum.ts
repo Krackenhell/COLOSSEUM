@@ -110,7 +110,10 @@ export function useSetTournamentStatus() {
   return useMutation({
     mutationFn: ({ tid, status }: { tid: string; status: string }) =>
       api.setTournamentStatus(tid, status),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tournaments"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tournaments"] });
+      qc.invalidateQueries({ queryKey: ["tournaments-all"] });
+    },
   });
 }
 

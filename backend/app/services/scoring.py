@@ -31,6 +31,7 @@ def get_leaderboard(tournament_id: str) -> list[dict]:
             "unrealized_pnl": a.unrealized_pnl,
             "totalPnl": total_pnl,
             "trades_count": a.trades_count,
+            "leverage": t.leverage,
             "positions": {
                 sym: {"side": p.side, "size": round(p.size, 6), "entry": round(p.entry_price, 4)}
                 for sym, p in a.positions.items() if p.side != "flat"

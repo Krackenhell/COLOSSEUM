@@ -132,6 +132,23 @@ export const agentApiBalance = (token: string) =>
 export const agentApiPositions = (token: string) =>
   request("GET", "/agent-api/v1/my/positions", undefined, { bearerToken: token });
 
+export const updateAgent = (tid: string, body: { agentId: string; name?: string; iconUrl?: string }) =>
+  request<AgentStateData>("POST", `/agent-api/v1/tournaments/${tid}/update-agent`, body);
+
+// ─── Trade Export ───
+export const exportAgentTrades = (tid: string, agentId: string, format: "json" | "csv" = "csv") => {
+  const url = `${BASE_URL}/tournaments/${tid}/agents/${agentId}/trades/export?format=${format}`;
+  if (format === "csv") {
+    // Direct download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${agentId}_trades.csv`;
+    a.click();
+    return Promise.resolve();
+  }
+  return request(`GET`, `/tournaments/${tid}/agents/${agentId}/trades/export?format=json`);
+};
+
 // ─── Types ───
 export interface TournamentData {
   id: string;
@@ -155,6 +172,7 @@ export interface CreateTournamentBody {
   riskProfile?: string;
   allowedSymbols?: string[];
   startingBalance?: number;
+  prizePool?: number;
 }
 
 export interface TimerData {
@@ -190,6 +208,7 @@ export interface EventData {
 export interface AgentStateData {
   agentId: string;
   name: string;
+  iconUrl?: string;
   connected: boolean;
   equity: number;
   cash_balance: number;
@@ -201,6 +220,7 @@ export interface AgentStateData {
 export interface AgentStudioEntry {
   agentId: string;
   name: string;
+  iconUrl?: string;
   connected: boolean;
   riskProfile: string;
   equity: number;

@@ -4,7 +4,7 @@ from app.types import ConnectAgent, Heartbeat, SubmitSignal
 from app import store
 from app.services.security import check_api_key, check_timestamp, check_nonce, check_antispam
 from app.services.simulator import execute_signal
-from app.services.market_data import get_price, resolve_quote, get_effective_trading_price, CHAINLINK_STRICT_ONLY, MARKET_SOURCE
+from app.services.market_data import get_price, resolve_quote, get_effective_trading_price, CHAINLINK_STRICT_ONLY, MARKET_SOURCE, _ensure_ws_manager
 from app.services.audit import log_event, log_signal
 
 router = APIRouter(prefix="/gateway", tags=["gateway"])
@@ -63,6 +63,14 @@ def submit_signal(body: SubmitSignal, request: Request):
                        status="rejected", error=stale_reason)
             raise HTTPException(503, detail=stale_reason)
         exec_source = "chainlink"
+    elif MARKET_SOURCE == "ws_mvp":
+        # WS MVP: use effective trading price, block if no price
+        price, trading_source, stale_reason = get_effective_trading_price(body.symbol)
+        if trading_source == "ws_blocked":
+            log_signal(body.tournamentId, body.agentId, body.symbol, body.side, body.qty,
+                       status="rejected", error=stale_reason)
+            raise HTTPException(503, detail=stale_reason)
+        exec_source = f"ws_mvp_{trading_source}"
     else:
         # Quote-based execution with hybrid pricing
         quoted_price, exec_source = resolve_quote(body.quoteId, body.symbol)
@@ -79,8 +87,13 @@ def submit_signal(body: SubmitSignal, request: Request):
         log_signal(body.tournamentId, body.agentId, body.symbol, body.side, body.qty,
                    price=price, status="rejected", error=str(e.detail))
         raise
+    # Resolve leverage: agent-chosen (clamped to tournament max) or tournament default
+    effective_leverage = t.leverage
+    if body.leverage is not None:
+        effective_leverage = max(1.0, min(body.leverage, t.leverage))
+
     try:
-        ev = execute_signal(agent, body.symbol, body.side, body.qty, t.leverage, price_override=price)
+        ev = execute_signal(agent, body.symbol, body.side, body.qty, effective_leverage, price_override=price)
     except ValueError as e:
         log_signal(body.tournamentId, body.agentId, body.symbol, body.side, body.qty,
                    price=price, status="rejected", error=str(e))

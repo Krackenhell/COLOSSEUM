@@ -457,6 +457,30 @@ async function fetchMarketStatus(){
     if(blocked.length>0){h+='<div style="background:#7f1d1d;border:2px solid #ef4444;border-radius:8px;padding:10px;margin:8px 0;color:#fca5a5;font-weight:700;font-size:.95rem">🚫 TRADING BLOCKED: ORACLE STALE/UNAVAILABLE — '+blocked.join(', ')+'</div>'}
   }
 
+  // Section WS: LIVE WEBSOCKET PRICE (MVP)
+  if(d.marketSource==='ws_mvp'){
+    h+='<div style="margin-top:10px;padding:10px;border:2px solid #a855f7;border-radius:8px;background:#1a1035">';
+    h+='<b style="color:#a855f7;font-size:.95rem">⚡ LIVE WEBSOCKET PRICE (MVP)</b>';
+    const wsConn=d.wsConnected?'<span style="color:#4ade80"> ● CONNECTED</span>':'<span style="color:#f87171"> ● DISCONNECTED</span>';
+    h+=wsConn;
+    if(d.wsProviders){Object.entries(d.wsProviders).forEach(([name,p])=>{
+      const dot=p.connected?'🟢':'🔴';
+      const age=p.lastMsgAgeSec!=null?Math.round(p.lastMsgAgeSec)+'s ago':'—';
+      const err=p.error?'<span style="color:#f87171"> '+p.error.substring(0,60)+'</span>':'';
+      const rc=p.reconnects>0?' <span style="color:#94a3b8">(reconnects:'+p.reconnects+')</span>':'';
+      h+='<div style="padding:2px 0;font-size:.82rem">'+dot+' <b>'+name.toUpperCase()+'</b> last:'+age+rc+err+'</div>';
+    })}
+    h+='<div style="margin-top:6px">';
+    Object.entries(d.symbols).forEach(([sym,s])=>{
+      const price=s.wsPrice!=null?s.wsPrice:'—';
+      const age=s.wsAgeSec!=null?Math.round(s.wsAgeSec)+'s':'—';
+      const src=s.wsSource||'—';
+      const stale=s.wsStale?'<span style="color:#f59e0b"> ⚠ STALE</span>':'<span style="color:#4ade80"> FRESH</span>';
+      h+='<div style="padding:2px 0"><b>'+sym+'</b>: <span style="color:#a855f7;font-size:1rem">$'+price+'</span> | age:'+age+' | source:'+src+stale+'</div>';
+    });
+    h+='</div></div>';
+  }
+
   // Section A: CHAINLINK ORACLE PRICE
   h+='<div style="margin-top:10px;padding:10px;border:1px solid #334155;border-radius:8px;background:#0c1222">';
   h+='<b style="color:#f59e0b;font-size:.95rem">⛓ CHAINLINK ORACLE PRICE</b><br>';

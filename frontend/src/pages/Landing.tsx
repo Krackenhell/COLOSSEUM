@@ -55,8 +55,27 @@ const Landing = () => {
 
       {/* Hero */}
       <section className="relative flex flex-col items-center justify-center text-center px-6 py-32 overflow-hidden">
-        {/* Subtle arena bg */}
-        <div className="absolute inset-0 opacity-[0.03]" style={{
+        {/* Video background — gladiator battle (B/W grayscale filter) */}
+        {/* Place video file at /public/arena-bg.mp4 — falls back to SVG */}
+        <video
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style={{ opacity: 0.12, filter: "grayscale(100%) contrast(1.3) brightness(0.7)" }}
+          src="/arena-bg.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          onError={(e) => { (e.target as HTMLVideoElement).style.display = "none"; }}
+        />
+        {/* Fallback SVG background (shows if video missing) */}
+        <div className="absolute inset-0 opacity-[0.06] pointer-events-none" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500'%3E%3Cdefs%3E%3ClinearGradient id='g1' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2300d4ff'/%3E%3Cstop offset='100%25' stop-color='%23d4a84b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg fill='none' stroke='url(%23g1)' stroke-width='1.5'%3E%3Cellipse cx='400' cy='420' rx='350' ry='60'/%3E%3Cellipse cx='400' cy='400' rx='300' ry='50'/%3E%3Cellipse cx='400' cy='380' rx='250' ry='40'/%3E%3Cpath d='M150 300 Q150 350 150 420'/%3E%3Cpath d='M250 280 Q250 350 250 420'/%3E%3Cpath d='M350 270 Q350 340 350 420'/%3E%3Cpath d='M450 270 Q450 340 450 420'/%3E%3Cpath d='M550 280 Q550 350 550 420'/%3E%3Cpath d='M650 300 Q650 350 650 420'/%3E%3Cpath d='M150 300 Q200 260 250 280'/%3E%3Cpath d='M250 280 Q300 250 350 270'/%3E%3Cpath d='M350 270 Q400 245 450 270'/%3E%3Cpath d='M450 270 Q500 250 550 280'/%3E%3Cpath d='M550 280 Q600 260 650 300'/%3E%3Ccircle cx='300' cy='170' r='16'/%3E%3Cpath d='M300 186 L300 240 M280 210 L320 210 M300 240 L280 280 M300 240 L320 280'/%3E%3Cpath d='M320 210 L360 180 L365 185 L325 215' stroke-width='2'/%3E%3Cellipse cx='278' cy='215' rx='14' ry='18'/%3E%3Ccircle cx='500' cy='170' r='16'/%3E%3Cpath d='M500 186 L500 240 M480 210 L520 210 M500 240 L480 280 M500 240 L520 280'/%3E%3Cpath d='M480 210 L440 180 L435 185 L475 215' stroke-width='2'/%3E%3Cellipse cx='522' cy='215' rx='14' ry='18'/%3E%3Ccircle cx='400' cy='182' r='3' fill='url(%23g1)' opacity='0.6'/%3E%3C/g%3E%3C/svg%3E")`,
+          backgroundSize: "clamp(500px, 70vw, 800px) auto",
+          backgroundPosition: "center 60%",
+          backgroundRepeat: "no-repeat",
+        }} />
+        {/* Radial glow overlay */}
+        <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{
           backgroundImage: `radial-gradient(ellipse 800px 400px at 50% 60%, hsl(190 100% 58% / 0.15), transparent),
                             radial-gradient(ellipse 600px 300px at 50% 50%, hsl(43 83% 71% / 0.08), transparent)`
         }} />

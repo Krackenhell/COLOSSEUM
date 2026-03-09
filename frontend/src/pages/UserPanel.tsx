@@ -6,14 +6,31 @@ import { ControlPanelCard } from "@/components/arena/ControlPanelCard";
 import { StatusPill } from "@/components/arena/StatusPill";
 import { Button } from "@/components/ui/button";
 import { useTournaments, useTournamentTimer, useLeaderboard, useMarketStatus, useRegisterAgent, useStartTestAgent, useTestAgentStatus, useStopTestAgent } from "@/hooks/use-colosseum";
-import { Activity, Users, Clock, TrendingUp, Plus, Play, Square, Loader2 } from "lucide-react";
+import { Activity, Users, Clock, TrendingUp, Plus, Play, Square, Loader2, Bot } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/hooks/use-wallet";
 import { WalletModal } from "@/components/WalletModal";
 
+const BASE = import.meta.env.VITE_API_BASE_URL || "";
+
+/** Bot avatar: deterministic color from agentId */
+function BotAvatar({ agentId, name, size = 36 }: { agentId: string; name?: string; size?: number }) {
+  const hash = agentId.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const hue = hash % 360;
+  return (
+    <div
+      className="rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+      style={{ width: size, height: size, background: `hsl(${hue}, 60%, 40%)` }}
+      title={name || agentId}
+    >
+      {name ? name.charAt(0).toUpperCase() : <Bot className="h-4 w-4" />}
+    </div>
+  );
+}
+
 const UserPanel = () => {
-  const { connected } = useWallet();
+  const { connected, address } = useWallet();
   const navigate = useNavigate();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const { toast } = useToast();
@@ -26,15 +43,43 @@ const UserPanel = () => {
   const startTestMut = useStartTestAgent();
   const stopTestMut = useStopTestAgent();
 
-  const [agentId, setAgentId] = useState("my-agent");
-  const [agentName, setAgentName] = useState("My Agent");
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [agentName, setAgentName] = useState<string | null>(null);
   const [testAgentId, setTestAgentId] = useState<string | null>(null);
   const { data: testAgentStatus } = useTestAgentStatus(testAgentId ?? undefined);
+
+  // Trade history state
+  const [tradeHistory, setTradeHistory] = useState<any[]>([]);
 
   // Wallet gate: if not connected, show modal
   useEffect(() => {
     if (!connected) setWalletModalOpen(true);
   }, [connected]);
+
+  // Fetch wallet's registered agent on connect (fixes "My Agents 0" bug)
+  useEffect(() => {
+    if (!address) return;
+    fetch(`${BASE}/agent-api/v1/wallet-agent/${address}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.exists) {
+          setAgentId(data.agentId);
+          setAgentName(data.name);
+        }
+      })
+      .catch(() => {});
+  }, [address]);
+
+  // Fetch trade history when agent + tournament are known
+  useEffect(() => {
+    if (!activeTournament?.id || !agentId) return;
+    fetch(`${BASE}/tournaments/${activeTournament.id}/agents/${agentId}/trades/export?format=json`, {
+      headers: { "x-api-key": "dev-gateway-key" },
+    })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setTradeHistory(Array.isArray(data) ? data : []))
+      .catch(() => setTradeHistory([]));
+  }, [activeTournament?.id, agentId]);
 
   // Build market chart data from market status (snapshot-based, not time-series)
   const marketChartData = market
@@ -44,8 +89,8 @@ const UserPanel = () => {
       }))
     : [];
 
-  // Find user's agents in leaderboard
-  const myAgents = leaderboard?.filter((a) => a.agentId === agentId) ?? [];
+  // Find user's agents in leaderboard (now uses real agentId from wallet lookup)
+  const myAgents = agentId ? (leaderboard?.filter((a) => a.agentId === agentId) ?? []) : [];
 
   const handleRegister = () => {
     if (!activeTournament) {
@@ -172,11 +217,14 @@ const UserPanel = () => {
               <div className="grid md:grid-cols-2 gap-4">
                 {myAgents.map((agent) => (
                   <div key={agent.agentId} className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg border border-border">
-                    <div>
-                      <p className="font-medium">{agent.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Rank #{agent.rank} · {agent.trades_count} trades
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <BotAvatar agentId={agent.agentId} name={agent.name} />
+                      <div>
+                        <p className="font-medium">{agent.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Rank #{agent.rank} · {agent.trades_count} trades
+                        </p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className={`text-sm font-mono ${agent.totalPnl >= 0 ? "text-cyan" : "text-crimson"}`}>
@@ -260,6 +308,55 @@ const UserPanel = () => {
           ) : (
             <p className="text-sm text-muted-foreground">
               Register an agent above to see it here. Agent ID must match.
+            </p>
+          )}
+        </ControlPanelCard>
+        {/* Trade History Table */}
+        <ControlPanelCard title="Trade History">
+          {tradeHistory.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
+                    <th className="text-left py-2 px-3 font-medium">Time</th>
+                    <th className="text-left py-2 px-3 font-medium">Symbol</th>
+                    <th className="text-left py-2 px-3 font-medium">Side</th>
+                    <th className="text-right py-2 px-3 font-medium">Qty</th>
+                    <th className="text-right py-2 px-3 font-medium">Price</th>
+                    <th className="text-right py-2 px-3 font-medium">PnL</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tradeHistory.slice(-50).reverse().map((t, i) => (
+                    <tr key={i} className="border-b border-border/30 hover:bg-secondary/30">
+                      <td className="py-2 px-3 text-xs text-muted-foreground font-mono">
+                        {t.ts ? new Date(t.ts * 1000).toLocaleTimeString() : "—"}
+                      </td>
+                      <td className="py-2 px-3 font-medium">{t.symbol || "—"}</td>
+                      <td className={`py-2 px-3 font-medium ${t.side === "buy" ? "text-cyan" : "text-crimson"}`}>
+                        {t.side?.toUpperCase() || "—"}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono">{t.qty ?? "—"}</td>
+                      <td className="py-2 px-3 text-right font-mono">
+                        {t.price ? `$${Number(t.price).toFixed(2)}` : "—"}
+                      </td>
+                      <td className={`py-2 px-3 text-right font-mono ${(t.pnl ?? 0) >= 0 ? "text-cyan" : "text-crimson"}`}>
+                        {t.pnl != null ? `${t.pnl >= 0 ? "+" : ""}$${Number(t.pnl).toFixed(2)}` : "—"}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <span className={`text-xs px-2 py-0.5 rounded ${t.status === "executed" ? "bg-cyan/20 text-cyan" : "bg-crimson/20 text-crimson"}`}>
+                          {t.status || "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {agentId ? "No trades yet. Start trading to see history here." : "Register an agent to see trade history."}
             </p>
           )}
         </ControlPanelCard>

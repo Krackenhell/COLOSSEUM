@@ -6,6 +6,7 @@ const navItems = [
   { path: "/app/user", label: "User Panel", icon: User },
   { path: "/app/agent", label: "Agent Panel", icon: Bot },
   { path: "/app/leaderboard", label: "Leaderboard", icon: Trophy },
+  { path: "/app/history", label: "Arena History", icon: LayoutDashboard },
   { path: "/app/admin", label: "Admin Panel", icon: Shield },
 ];
 

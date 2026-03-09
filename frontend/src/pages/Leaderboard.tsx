@@ -4,10 +4,9 @@ import { ControlPanelCard } from "@/components/arena/ControlPanelCard";
 import { ArenaStatCard } from "@/components/arena/ArenaStatCard";
 import { RomanBadge } from "@/components/arena/RomanBadge";
 import { useTournaments, useLeaderboard, useEquityChart } from "@/hooks/use-colosseum";
+import { EquityCurveComparison } from "@/components/arena/EquityCurveComparison";
 import { Trophy, Users, TrendingUp, Swords } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from "recharts";
-
-const COLORS = ["#38bdf8", "#a855f7", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6"];
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const Leaderboard = () => {
   const { data: tournaments } = useTournaments();
@@ -29,9 +28,6 @@ const Leaderboard = () => {
     name: a.name.length > 12 ? a.name.slice(0, 12) + "…" : a.name,
     pnl: a.totalPnl,
   }));
-
-  // Equity chart lines
-  const equityChartData = equityData?.datasets ?? [];
 
   // Transform to LeaderboardTable format
   const tableAgents = agents.map((a, i) => ({
@@ -131,41 +127,12 @@ const Leaderboard = () => {
             )}
           </ControlPanelCard>
 
-          <ControlPanelCard title="Equity Over Time">
-            {equityChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 15% 18%)" />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    domain={["auto", "auto"]}
-                    tick={{ fill: "hsl(220 15% 55%)", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => new Date(v).toLocaleTimeString()}
-                  />
-                  <YAxis tick={{ fill: "hsl(220 15% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(220 18% 11%)", border: "1px solid hsl(220 15% 18%)", borderRadius: 8, color: "hsl(220 30% 93%)" }}
-                    labelFormatter={(v) => new Date(v).toLocaleString()}
-                  />
-                  {equityChartData.map((ds, i) => (
-                    <Line
-                      key={ds.agentId}
-                      data={ds.data}
-                      dataKey="y"
-                      name={ds.name}
-                      stroke={COLORS[i % COLORS.length]}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-sm text-muted-foreground py-8 text-center">No equity data yet</p>
-            )}
+          <ControlPanelCard title="Equity Curve Comparison">
+            <EquityCurveComparison
+              equityData={equityData}
+              height={300}
+              highlightAgentId={topAgent?.agentId}
+            />
           </ControlPanelCard>
         </div>
       </div>

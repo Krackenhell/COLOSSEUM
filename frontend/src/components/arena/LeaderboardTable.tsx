@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { RomanBadge } from "./RomanBadge";
 import { StatusPill } from "./StatusPill";
+import { Bot } from "lucide-react";
 
 interface Agent {
   id: number;
@@ -65,6 +66,12 @@ export function LeaderboardTable({ agents, className, compact }: LeaderboardTabl
               </td>
               <td className="py-3 px-4">
                 <div className="flex items-center gap-2">
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                    style={{ background: `hsl(${(agent.name.split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % 360}, 60%, 40%)` }}
+                  >
+                    {agent.name.charAt(0).toUpperCase()}
+                  </div>
                   <span className="font-medium text-foreground">{agent.name}</span>
                   <RomanBadge
                     label={agent.badge}

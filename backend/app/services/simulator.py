@@ -92,15 +92,15 @@ def execute_signal(agent: AgentState, symbol: str, side: str, qty: float, levera
 
     # Log signal and snapshot
     log_signal(agent.tournamentId, agent.agentId, symbol, side, qty,
-               price=price, status="executed", equity_after=agent.equity)
+               price=price, leverage=leverage, status="executed", equity_after=agent.equity)
     snapshot_equity(agent.tournamentId, agent.agentId,
                     agent.equity, agent.cash_balance, agent.realized_pnl)
 
     ev = Event(
         tournamentId=agent.tournamentId, agentId=agent.agentId, type="trade",
         detail={"symbol": symbol, "side": side, "qty": qty, "price": price,
-                "notional": round(notional, 2), "pos_side": pos.side,
-                "pos_size": round(pos.size, 6)},
+                "notional": round(notional, 2), "leverage": leverage,
+                "pos_side": pos.side, "pos_size": round(pos.size, 6)},
     )
     store.events.setdefault(agent.tournamentId, []).append(ev)
     return ev

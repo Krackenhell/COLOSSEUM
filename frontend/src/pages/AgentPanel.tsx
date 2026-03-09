@@ -1,15 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ArenaStatCard } from "@/components/arena/ArenaStatCard";
 import { ControlPanelCard } from "@/components/arena/ControlPanelCard";
 import { StatusPill } from "@/components/arena/StatusPill";
 import { useTournaments, useAgentsStudio, useEquityChart, useEvents } from "@/hooks/use-colosseum";
-import { DollarSign, TrendingUp, BarChart3, Activity, Settings } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { exportAgentTrades } from "@/lib/api";
+import { EquityCurveComparison } from "@/components/arena/EquityCurveComparison";
+import { DollarSign, TrendingUp, BarChart3, Activity, Settings, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-const COLORS = ["hsl(190 100% 58%)", "hsl(43 83% 71%)", "hsl(142 71% 45%)", "hsl(280 65% 60%)", "hsl(0 84% 60%)"];
 
 const AgentPanel = () => {
   const { data: tournaments } = useTournaments();
@@ -21,12 +20,16 @@ const AgentPanel = () => {
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const agent = agents?.find((a) => a.agentId === selectedAgent) ?? agents?.[0];
 
-  // Equity chart data
-  const chartData = equityData?.datasets
-    .filter((ds) => !selectedAgent || ds.agentId === (agent?.agentId ?? ""))
-    .map((ds) => ds.data.map((p) => ({ ts: p.x, equity: p.y })))
-    .flat()
-    .sort((a, b) => a.ts - b.ts) ?? [];
+  // Filtered equity data for selected agent
+  const filteredEquityData = useMemo(() => {
+    if (!equityData) return undefined;
+    if (!selectedAgent) return equityData;
+    return {
+      datasets: equityData.datasets.filter(
+        (ds) => ds.agentId === (agent?.agentId ?? "")
+      ),
+    };
+  }, [equityData, selectedAgent, agent?.agentId]);
 
   // Agent events
   const agentEvents = (events ?? [])
@@ -66,6 +69,17 @@ const AgentPanel = () => {
                 ))}
               </select>
             )}
+            {activeTid && agent && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => exportAgentTrades(activeTid, agent.agentId, "csv")}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export CSV
+              </Button>
+            )}
           </div>
         </div>
 
@@ -92,28 +106,11 @@ const AgentPanel = () => {
         <div className="grid md:grid-cols-3 gap-6">
           {/* Equity Curve */}
           <ControlPanelCard title="Equity Curve" className="md:col-span-2">
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 15% 18%)" />
-                  <XAxis
-                    dataKey="ts"
-                    tick={{ fill: "hsl(220 15% 55%)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => new Date(v).toLocaleTimeString()}
-                  />
-                  <YAxis tick={{ fill: "hsl(220 15% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(220 18% 11%)", border: "1px solid hsl(220 15% 18%)", borderRadius: 8, color: "hsl(220 30% 93%)" }}
-                    labelFormatter={(v) => new Date(v).toLocaleString()}
-                  />
-                  <Line type="monotone" dataKey="equity" stroke="hsl(43 83% 71%)" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-sm text-muted-foreground py-8 text-center">No equity data yet. Start trading.</p>
-            )}
+            <EquityCurveComparison
+              equityData={filteredEquityData}
+              height={280}
+              highlightAgentId={agent?.agentId}
+            />
           </ControlPanelCard>
 
           {/* Event Feed */}
@@ -205,6 +202,7 @@ const AgentPanel = () => {
         <ControlPanelCard title="Agent Info">
           <div className="grid md:grid-cols-3 gap-4">
             {[
+              { label: "Leverage", value: `${(agent as any).leverage ?? 10}x` },
               { label: "Risk Profile", value: agent.riskProfile },
               { label: "Cash Balance", value: `$${agent.cash_balance.toFixed(2)}` },
               { label: "Unrealized PnL", value: `$${agent.unrealized_pnl.toFixed(2)}` },

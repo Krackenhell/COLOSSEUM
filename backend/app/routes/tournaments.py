@@ -1,5 +1,8 @@
 import time
-from fastapi import APIRouter, HTTPException
+import csv
+import io
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from app.types import CreateTournament, Tournament, RegisterAgent, AgentState, SetStatus, TournamentStatus
 from app import store
 from app.services.scoring import get_leaderboard
@@ -67,6 +70,29 @@ def list_all_tournaments():
     for t in list(store.tournaments.values()) + list(store.archived_tournaments.values()):
         d = t.model_dump()
         d["effectiveStatus"] = t.effective_status()
+        # Attach results snapshot for finished/archived tournaments
+        eff = t.effective_status()
+        if eff in ("finished", "archived"):
+            lb = get_leaderboard(t.id)
+            top3 = []
+            for entry in lb[:3]:
+                top3.append({
+                    "rank": entry.get("rank", 0),
+                    "agentId": entry.get("agentId", ""),
+                    "name": entry.get("name", ""),
+                    "totalPnl": entry.get("totalPnl", 0),
+                    "equity": entry.get("equity", 0),
+                    "reward": 0,
+                })
+            agents_dict = store.agents.get(t.id, {})
+            total_trades = sum(a.trades_count for a in agents_dict.values())
+            d["results"] = {
+                "winner": top3[0]["name"] if top3 else "—",
+                "agentCount": len(agents_dict),
+                "totalTrades": total_trades,
+                "endedAt": t.endAt,
+                "top3": top3,
+            }
         out.append(d)
     out.sort(key=lambda x: -x["createdAt"])
     return out
@@ -287,6 +313,51 @@ def debug_agent(tid: str, agent_id: str):
     }
 
 
+@router.get("/{tid}/agents/{agent_id}/trades/export")
+def export_agent_trades(tid: str, agent_id: str, format: str = Query("json", pattern="^(json|csv)$")):
+    """Export agent trade history in JSON or CSV format."""
+    if tid not in store.tournaments and tid not in store.archived_tournaments:
+        raise HTTPException(404, "Tournament not found")
+    t = store.tournaments.get(tid) or store.archived_tournaments.get(tid)
+    agents_dict = store.agents.get(tid, {})
+    if agent_id not in agents_dict:
+        raise HTTPException(404, "Agent not found in this tournament")
+
+    key = f"{tid}:{agent_id}"
+    signals = store.signal_history.get(key, [])
+
+    rows = []
+    for s in signals:
+        rows.append({
+            "timestamp": s.ts,
+            "symbol": s.symbol,
+            "side": s.side,
+            "qty": s.qty,
+            "price": s.price,
+            "leverage": s.leverage,
+            "realized_pnl": s.equity_after - t.startingBalance if s.status == "executed" else 0,
+            "status": s.status,
+            "error": s.error,
+        })
+
+    if format == "csv":
+        if not rows:
+            output = io.StringIO("timestamp,symbol,side,qty,price,leverage,realized_pnl,status,error\n")
+        else:
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={agent_id}_trades.csv"}
+        )
+
+    return {"tournamentId": tid, "agentId": agent_id, "trades": rows, "count": len(rows)}
+
+
 @router.get("/{tid}/agents-studio")
 def agents_studio(tid: str):
     """Agent Studio: detailed per-agent data with signals and errors."""
@@ -313,7 +384,7 @@ def agents_studio(tid: str):
                                   "unrealized_pnl": round(upnl, 2)}
         result.append({
             "agentId": a.agentId, "name": a.name, "connected": a.connected,
-            "riskProfile": t.riskProfile.value,
+            "riskProfile": t.riskProfile.value, "leverage": t.leverage,
             "equity": round(a.equity, 2), "cash_balance": round(a.cash_balance, 2),
             "realized_pnl": round(a.realized_pnl, 2),
             "unrealized_pnl": round(a.unrealized_pnl, 2),

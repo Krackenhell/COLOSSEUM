@@ -26,6 +26,7 @@ class CreateTournament(BaseModel):
     endAt: Optional[float] = None
     riskProfile: RiskProfile = RiskProfile.normal
     leverage: float = 10.0
+    prizePool: float = 0.0
 
 
 class Tournament(BaseModel):
@@ -39,6 +40,8 @@ class Tournament(BaseModel):
     endAt: float = 0.0
     riskProfile: RiskProfile = RiskProfile.normal
     leverage: float = 10.0
+    prizePool: float = 0.0
+    results: Optional[dict] = None
 
     def effective_status(self) -> str:
         now = time.time()
@@ -59,6 +62,7 @@ class Tournament(BaseModel):
 class RegisterAgent(BaseModel):
     agentId: str
     name: str = ""
+    iconUrl: Optional[str] = None
 
 
 class FuturesPosition(BaseModel):
@@ -74,6 +78,7 @@ class FuturesPosition(BaseModel):
 class AgentState(BaseModel):
     agentId: str
     name: str = ""
+    iconUrl: Optional[str] = None
     tournamentId: str = ""
     cash_balance: float = 100000.0
     starting_balance: float = 100000.0
@@ -112,6 +117,7 @@ class SubmitSignal(BaseModel):
     timestamp: float
     nonce: str
     quoteId: Optional[str] = None
+    leverage: Optional[float] = None  # agent-chosen leverage; None = use tournament default
 
 
 class Event(BaseModel):
@@ -129,6 +135,7 @@ class SignalRecord(BaseModel):
     side: str
     qty: float
     price: float = 0.0
+    leverage: float = 1.0
     status: str = "executed"
     error: str = ""
     equity_after: float = 0.0
@@ -151,7 +158,9 @@ class SignalRequest(BaseModel):
     side: str
     qty: float
     quoteId: Optional[str] = None
+    leverage: Optional[float] = None  # agent-chosen leverage; None = use tournament default
 
 
 class JoinRequest(BaseModel):
     name: str = ""
+    iconUrl: Optional[str] = None
