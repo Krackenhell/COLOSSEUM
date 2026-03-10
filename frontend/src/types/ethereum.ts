@@ -17,6 +17,7 @@ type EthereumEventKey = keyof EthereumEvent;
 
 interface Ethereum {
   isMetaMask?: boolean;
+  isRabby?: boolean;
   request<T = unknown>(args: EthereumRequestArguments): Promise<T>;
   on<K extends EthereumEventKey>(event: K, handler: (data: EthereumEvent[K]) => void): void;
   removeListener<K extends EthereumEventKey>(event: K, handler: (data: EthereumEvent[K]) => void): void;

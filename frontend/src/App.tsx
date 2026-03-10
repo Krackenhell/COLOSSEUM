@@ -12,13 +12,25 @@ import History from "./pages/History";
 import AdminPanel from "./pages/AdminPanel";
 import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
+import { BackendStatus } from "./components/BackendStatus";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+      refetchOnWindowFocus: false,
+      // Don't throw on error — let components handle gracefully
+      throwOnError: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <WalletProvider>
+        <BackendStatus />
         <Toaster />
         <Sonner />
         <BrowserRouter>

@@ -1,9 +1,9 @@
 // src/components/WalletProvider.tsx
-// Real MetaMask EVM wallet provider.
+// EVM wallet provider — works with any EIP-1193 wallet (MetaMask, Rabby, etc.)
 // Automatically switches to Avalanche Fuji Testnet on connect.
-// Persists address in localStorage to survive page refresh.
+// Persists address in localStorage; respects explicit disconnect.
 
-import { useState, useEffect, useCallback, ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { WalletContext } from "@/hooks/use-wallet";
 import "@/types/ethereum";
 
@@ -20,6 +20,7 @@ const FUJI_NETWORK = {
 };
 
 const STORAGE_KEY = "colosseum_wallet";
+const DISCONNECTED_KEY = "colosseum_disconnected";
 
 // ──────────────────────────────────────────────────────────────
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -28,23 +29,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Restore persisted address on mount ──
+  // Track whether user explicitly disconnected — prevents silent re-attach
+  const userDisconnectedRef = useRef(
+    localStorage.getItem(DISCONNECTED_KEY) === "1"
+  );
+
+  // ── Restore persisted address on mount (only if user did NOT disconnect) ──
   useEffect(() => {
+    if (userDisconnectedRef.current) return; // respect explicit disconnect
+
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && window.ethereum) {
-      // Silently re-request accounts (no popup if already connected)
       window.ethereum
         .request<string[]>({ method: "eth_accounts" })
         .then((accounts) => {
           if (accounts && accounts.length > 0) {
             setAddress(accounts[0]);
-            // Read current chainId
             window.ethereum!
               .request<string>({ method: "eth_chainId" })
               .then((cid) => setChainId(parseInt(cid, 16).toString()))
               .catch(() => {});
           } else {
-            // Was connected before but MetaMask revoked — clean up
             localStorage.removeItem(STORAGE_KEY);
           }
         })
@@ -52,13 +57,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ── Subscribe to MetaMask events ──
+  // ── Subscribe to provider events ──
   useEffect(() => {
     if (!window.ethereum) return;
 
     const onAccountsChanged = (accounts: string[]) => {
+      // If user explicitly disconnected via app, ignore provider events
+      if (userDisconnectedRef.current) return;
+
       if (accounts.length === 0) {
-        // User disconnected all accounts in MetaMask
+        // Wallet revoked all accounts
         setAddress(null);
         setChainId(null);
         localStorage.removeItem(STORAGE_KEY);
@@ -69,6 +77,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
 
     const onChainChanged = (cid: string) => {
+      if (userDisconnectedRef.current) return;
       setChainId(parseInt(cid, 16).toString());
     };
 
@@ -90,7 +99,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         params: [{ chainId: FUJI_CHAIN_ID_HEX }],
       });
     } catch (switchErr: unknown) {
-      // 4902 = chain not added yet in MetaMask
       const err = switchErr as { code?: number };
       if (err.code === 4902) {
         await window.ethereum.request({
@@ -107,15 +115,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(async () => {
     setError(null);
 
-    if (!window.ethereum || !window.ethereum.isMetaMask) {
-      const msg = "MetaMask not found. Install it from metamask.io";
-      setError(msg);
+    if (!window.ethereum) {
+      setError("No EVM wallet found. Install MetaMask or Rabby.");
       return;
     }
 
+    // Clear disconnect flag — user is explicitly connecting
+    userDisconnectedRef.current = false;
+    localStorage.removeItem(DISCONNECTED_KEY);
+
     setIsConnecting(true);
     try {
-      // 1. Request accounts → triggers MetaMask popup
+      // 1. Force explicit permission flow when wallet supports it
+      try {
+        await window.ethereum.request({
+          method: "wallet_requestPermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch {
+        // Not all wallets implement this method — fallback to eth_requestAccounts below
+      }
+
+      // 2. Request accounts (explicit user action path)
       const accounts = await window.ethereum.request<string[]>({
         method: "eth_requestAccounts",
       });
@@ -133,7 +154,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(STORAGE_KEY, accounts[0]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Connection failed";
-      // 4001 = user rejected the request — not an error to show
       if ((err as { code?: number }).code !== 4001) {
         setError(msg);
       }
@@ -143,13 +163,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Disconnect ──
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
     setAddress(null);
     setChainId(null);
     setError(null);
     localStorage.removeItem(STORAGE_KEY);
-    // Note: MetaMask has no programmatic disconnect — we only clear local state.
-    // User must disconnect in MetaMask extension if desired.
+    // Mark explicit disconnect — prevents auto-restore on refresh & stale events
+    localStorage.setItem(DISCONNECTED_KEY, "1");
+    userDisconnectedRef.current = true;
+
+    // Best-effort wallet permission revoke (if supported)
+    if (window.ethereum) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch {
+        // Some wallets do not support revokePermissions
+      }
+    }
   }, []);
 
   const isWrongNetwork = chainId !== null && chainId !== FUJI_CHAIN_ID;
@@ -160,7 +193,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         connected: !!address,
         address,
         chainId,
-        false,
+        isAdmin: false,
         isConnecting,
         error: isWrongNetwork
           ? `Wrong network. Please switch to Avalanche Fuji Testnet.`

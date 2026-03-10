@@ -17,10 +17,10 @@ export interface WalletContextType {
   isConnecting: boolean;
   /** Last connection error message */
   error: string | null;
-  /** Connect MetaMask → switches to Fuji testnet automatically */
+  /** Connect wallet → switches to Fuji testnet automatically */
   connect: () => Promise<void>;
-  /** Disconnect (clears state) */
-  disconnect: () => void;
+  /** Disconnect (clears state + best-effort permission revoke) */
+  disconnect: () => Promise<void>;
 }
 
 export const WalletContext = createContext<WalletContextType>({
@@ -31,7 +31,7 @@ export const WalletContext = createContext<WalletContextType>({
   isConnecting: false,
   error: null,
   connect: async () => {},
-  disconnect: () => {},
+  disconnect: async () => {},
 });
 
 export function useWallet(): WalletContextType {

@@ -1,5 +1,5 @@
 // src/components/WalletModal.tsx
-// Wallet connect modal — MetaMask only (EVM / Avalanche Fuji).
+// Wallet connect modal — supports any EIP-1193 wallet (MetaMask, Rabby, etc.)
 
 import {
   Dialog, DialogContent, DialogHeader,
@@ -15,15 +15,22 @@ interface WalletModalProps {
   onConnected?: () => void;
 }
 
-// MetaMask logo as inline SVG (no external asset needed)
-function MetaMaskIcon() {
+/** Detect which wallet is injected and return name + whether it exists */
+function detectWallet(): { name: string; installed: boolean } {
+  if (typeof window === "undefined" || !window.ethereum) {
+    return { name: "Wallet", installed: false };
+  }
+  if (window.ethereum.isRabby) return { name: "Rabby", installed: true };
+  if (window.ethereum.isMetaMask) return { name: "MetaMask", installed: true };
+  return { name: "Browser Wallet", installed: true };
+}
+
+/** Generic wallet icon (no MetaMask-specific branding) */
+function WalletIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 35 33" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M32.958 1L19.43 10.88l2.52-5.958L32.958 1z" fill="#E17726" stroke="#E17726" strokeWidth=".25"/>
-      <path d="M2.042 1l13.41 9.97-2.4-6.048L2.042 1z" fill="#E27625" stroke="#E27625" strokeWidth=".25"/>
-      <path d="M28.17 23.53l-3.6 5.51 7.7 2.12 2.21-7.49-6.31-.14z" fill="#E27625" stroke="#E27625" strokeWidth=".25"/>
-      <path d="M.54 23.67l2.2 7.49 7.69-2.12-3.59-5.51-6.3.14z" fill="#E27625" stroke="#E27625" strokeWidth=".25"/>
-    </svg>
+    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-cyan/20 to-cyan/5 border border-cyan/30">
+      <Wallet className="h-4 w-4 text-cyan" />
+    </div>
   );
 }
 
@@ -40,7 +47,7 @@ export function WalletModal({ open, onOpenChange, onConnected }: WalletModalProp
     }
   };
 
-  const hasMetaMask = typeof window !== "undefined" && !!window.ethereum?.isMetaMask;
+  const wallet = detectWallet();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,7 +58,7 @@ export function WalletModal({ open, onOpenChange, onConnected }: WalletModalProp
             Connect Wallet
           </DialogTitle>
           <DialogDescription>
-            Connect your MetaMask wallet to access Colosseum Arena.
+            Connect your EVM wallet to access Colosseum Arena.
             You will be switched to <strong>Avalanche Fuji Testnet</strong> automatically.
           </DialogDescription>
         </DialogHeader>
@@ -65,17 +72,17 @@ export function WalletModal({ open, onOpenChange, onConnected }: WalletModalProp
             </div>
           )}
 
-          {/* MetaMask button */}
-          {hasMetaMask ? (
+          {/* Wallet button */}
+          {wallet.installed ? (
             <Button
               variant="outline"
               className="w-full justify-start gap-3 h-14"
               onClick={handleConnect}
               disabled={isConnecting}
             >
-              <MetaMaskIcon />
+              <WalletIcon />
               <div className="text-left flex-1">
-                <div className="font-medium">MetaMask</div>
+                <div className="font-medium">{wallet.name}</div>
                 <div className="text-xs text-muted-foreground">
                   Avalanche Fuji Testnet (EVM)
                 </div>
@@ -83,20 +90,31 @@ export function WalletModal({ open, onOpenChange, onConnected }: WalletModalProp
               {isConnecting && <Loader2 className="h-4 w-4 animate-spin ml-auto" />}
             </Button>
           ) : (
-            /* MetaMask not installed */
+            /* No wallet installed */
             <div className="rounded-md border border-dashed p-4 text-center space-y-2">
               <p className="text-sm text-muted-foreground">
-                MetaMask is not installed in your browser.
+                No EVM wallet detected in your browser.
               </p>
-              <Button
-                variant="link"
-                size="sm"
-                className="gap-1"
-                onClick={() => window.open("https://metamask.io/download/", "_blank")}
-              >
-                Install MetaMask
-                <ExternalLink className="h-3 w-3" />
-              </Button>
+              <div className="flex justify-center gap-3">
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => window.open("https://rabby.io/", "_blank")}
+                >
+                  Install Rabby
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => window.open("https://metamask.io/download/", "_blank")}
+                >
+                  Install MetaMask
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
           )}
 
